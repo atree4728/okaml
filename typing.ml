@@ -5,7 +5,7 @@ let generalize tyenv ty = TySchema (free_tyvars tyenv ty, ty)
 
 let instantiate (TySchema (abs_tyvars, ty)) =
   let concretize =
-    abs_tyvars |> List.map (fun abs_tyvar -> abs_tyvar, TyVar (new_tyvar ())) |> ty_subst
+    abs_tyvars |> List.map (fun abs_tyvar -> abs_tyvar, TyVar (fresh ())) |> ty_subst
   in
   concretize ty
 ;;
@@ -16,7 +16,7 @@ let rec infer_patten =
   | PInt _ -> Ok (TyInt, [], Env.empty)
   | PBool _ -> Ok (TyBool, [], Env.empty)
   | PVar name ->
-    let tv = new_tyvar () in
+    let tv = fresh () in
     let type_schema = TySchema ([], TyVar tv) in
     let new_binding = Env.singleton name type_schema in
     Ok (TyVar tv, [], new_binding)
@@ -27,7 +27,7 @@ let rec infer_patten =
     let new_binding = Env.union new_binding_l new_binding_r in
     Ok (TyPair (type_l, type_r), constr, new_binding)
   | PNil ->
-    let type_list = TyList (TyVar (new_tyvar ())) in
+    let type_list = TyList (TyVar (fresh ())) in
     Ok (type_list, [], Env.empty)
   | PCons (hd, tl) ->
     let* type_hd, constr_hd, new_binding_hd = infer_patten hd in
@@ -50,7 +50,7 @@ and infer_let is_rec tyenv decls cont =
     if is_rec
     then
       decls
-      |> List.map (fun (name, _) -> name, TySchema ([], TyVar (new_tyvar ())))
+      |> List.map (fun (name, _) -> name, TySchema ([], TyVar (fresh ())))
       |> Env.of_list
       |> Env.union tyenv
     else tyenv
@@ -117,7 +117,7 @@ and infer_expr tyenv =
     Ok (type_thn, constr)
   | ELet (decls, cont) -> infer_let false tyenv decls cont
   | ELetRec (decls, cont) -> infer_let true tyenv decls cont
-  | ENil -> Ok (TyList (TyVar (new_tyvar ())), [])
+  | ENil -> Ok (TyList (TyVar (fresh ())), [])
   | ECons (hd, tl) ->
     let* type_hd, constr_hd = infer_expr tyenv hd in
     let* type_tl, constr_tl = infer_expr tyenv tl in
@@ -128,7 +128,7 @@ and infer_expr tyenv =
     Ok (TyPair (type_l, type_r), constr_l @ constr_r)
   | EMatch (target, branches) ->
     let* type_target, constr_target = infer_expr tyenv target in
-    let type_ret = TyVar (new_tyvar ()) in
+    let type_ret = TyVar (fresh ()) in
     let* constr =
       branches
       |> map_m (fun branch ->
@@ -138,7 +138,7 @@ and infer_expr tyenv =
     in
     Ok (type_ret, constr)
   | EFun (arg, expr) ->
-    let type_arg = TyVar (new_tyvar ()) in
+    let type_arg = TyVar (fresh ()) in
     (* do not generalize *)
     let tyenv' = Env.extend arg (TySchema ([], type_arg)) tyenv in
     let* type_expr, constr_expr = infer_expr tyenv' expr in
@@ -146,7 +146,7 @@ and infer_expr tyenv =
   | EApp (func, param) ->
     let* type_func, constr_func = infer_expr tyenv func in
     let* type_param, constr_param = infer_expr tyenv param in
-    let type_ret = TyVar (new_tyvar ()) in
+    let type_ret = TyVar (fresh ()) in
     let constr =
       ((type_func, TyFun (type_param, type_ret)) :: constr_func) @ constr_param
     in

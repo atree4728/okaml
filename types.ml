@@ -47,15 +47,17 @@ type command =
   | CDecl of (name * expr) list
   | CDeclRec of (name * expr) list
 
+type tyvar = Idx of int
+
 type ty =
   | TyInt
   | TyBool
   | TyFun of ty * ty
-  | TyVar of name
+  | TyVar of tyvar
   | TyPair of ty * ty
   | TyList of ty
 
-type type_schema = TySchema of name list * ty
+type type_schema = TySchema of tyvar list * ty
 
 type evalError =
   | Unbound of string
@@ -167,7 +169,7 @@ let tag_of_value = function
   | VRecFun _ -> "recfun"
 ;;
 
-let string_of_tyvar = string_of_name
+let string_of_tyvar (Idx i) = Printf.sprintf "'a%d" i
 
 let rec string_of_type = function
   | TyInt -> "int"
@@ -181,7 +183,7 @@ let rec string_of_type = function
 let string_of_type_schema (TySchema (abs_tyvars, ty)) =
   Printf.sprintf
     "∀ %s. %s"
-    (abs_tyvars |> List.map string_of_name |> String.concat ", ")
+    (abs_tyvars |> List.map string_of_tyvar |> String.concat ", ")
     (string_of_type ty)
 ;;
 

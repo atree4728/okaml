@@ -1,14 +1,13 @@
 open Types
 
-type subst = (name * ty) list
+type subst = (tyvar * ty) list
 type constraints = (ty * ty) list
 
 let var_cnt = ref 0
 
-let new_tyvar () =
-  let name = Printf.sprintf "'a%d" !var_cnt in
+let fresh () =
   var_cnt := !var_cnt + 1;
-  Name name
+  Idx !var_cnt
 ;;
 
 let ty_schema_subst sub (TySchema (abs_tyvars, ty)) =
@@ -16,9 +15,9 @@ let ty_schema_subst sub (TySchema (abs_tyvars, ty)) =
     | TyInt -> TyInt
     | TyBool -> TyBool
     | TyFun (t1, t2) -> TyFun (aux t1, aux t2)
-    | TyVar name ->
+    | TyVar tyvar ->
       let sub' = List.filter (fun (name, _) -> not @@ List.mem name abs_tyvars) sub in
-      List.assoc_opt name sub' |> Option.value ~default:(TyVar name)
+      List.assoc_opt tyvar sub' |> Option.value ~default:(TyVar tyvar)
     | TyPair (t1, t2) -> TyPair (aux t1, aux t2)
     | TyList t -> TyList (aux t)
   in
