@@ -1,6 +1,7 @@
-open Types
+open Syntax
 
 let rec matches value pattern =
+  let open Value in
   let ( let* ) = Option.bind in
   match value, pattern with
   | VInt n, PInt n' when n = n' -> Some Env.empty
@@ -18,47 +19,23 @@ let rec matches value pattern =
   | _ -> None
 ;;
 
-let expect_int = function
-  | VInt n -> Ok n
-  | v -> Error (UnexpectedType (tag_of_value v, "int"))
-;;
-
-let expect_bool = function
-  | VBool b -> Ok b
-  | v -> Error (UnexpectedType (tag_of_value v, "bool"))
-;;
-
-let expect_list = function
-  | VList l -> Ok l
-  | v -> Error (UnexpectedType (tag_of_value v, "list"))
-;;
-
-let expect_fun = function
-  | VFun (args, expr, env) -> Ok (args, expr, env)
-  | v -> Error (UnexpectedType (tag_of_value v, "fun"))
-;;
-
-let expect_recfun = function
-  | VRecFun (i, mutrefs, env) -> Ok (i, mutrefs, env)
-  | v -> Error (UnexpectedType (tag_of_value v, "recfun"))
-;;
-
 let extend_with_r decls env =
-  let open Myresult in
+  let open Result in
   let* nenv =
     decls
     |> List.mapi (fun i (self, expr) ->
       match expr with
-      | EFun _ -> Ok (self, VRecFun (i, decls, env))
-      | _ -> Error LetRecForNonFunc)
-    |> sequence
+      | EFun _ -> Ok (self, Value.VRecFun (i, decls, env))
+      | _ -> Error Error.LetRecForNonFunc)
+    |> Result.sequence
   in
   Ok (nenv |> Env.of_list |> Env.union env)
 ;;
 
-let rec eval_expr env e =
-  let open Myresult in
-  match e with
+let rec eval_expr env expr =
+  let open Result in
+  let open Value in
+  match expr with
   | EConstInt n -> Ok (VInt n)
   | EConstBool b -> Ok (VBool b)
   | EVar name -> Env.lookup name env
@@ -125,18 +102,18 @@ let rec eval_expr env e =
         branches
     in
     let* expr, binding =
-      Option.to_result ~none:(MatchFailure (string_of_expr target)) matched
+      Option.to_result ~none:(Error.MatchFailure (string_of_expr target)) matched
     in
     eval_expr (Env.union env binding) expr
   | EFun (arg, expr) -> Ok (VFun (arg, expr, env))
   | EApp (func, param) ->
     let* vfunc = eval_expr env func in
     let* vparam = eval_expr env param in
-    alternative
-      (let* arg, expr, oenv = expect_fun vfunc in
+    (match vfunc with
+     | VFun (arg, expr, oenv) ->
        let env' = oenv |> Env.extend arg vparam in
-       eval_expr env' expr)
-      (let* idxf, mutrefs, oenv = expect_recfun vfunc in
+       eval_expr env' expr
+     | VRecFun (idxf, mutrefs, oenv) ->
        let env' =
          mutrefs
          |> List.mapi (fun i (self, expr) -> self, VRecFun (i, mutrefs, oenv))
@@ -146,10 +123,11 @@ let rec eval_expr env e =
        let _, recfun = List.nth mutrefs idxf in
        let* arg, expr, _ = eval_expr env' recfun >>= expect_fun in
        let env'' = env' |> Env.extend arg vparam in
-       eval_expr env'' expr)
+       eval_expr env'' expr
+     | _ -> Error (UnexpectedType (tag_of_value vfunc, "fun")))
 
 and extend_with decls env =
-  let open Myresult in
+  let open Result in
   let* evaled =
     map_m
       (fun (name, expr) ->
@@ -161,17 +139,17 @@ and extend_with decls env =
 ;;
 
 let eval_command env command =
-  let open Myresult in
+  let open Result in
   match command with
   | CExp expr ->
     let* value = eval_expr env expr in
-    Ok ([ "-", string_of_value value ], env)
+    Ok ([ "-", Value.string_of_value value ], env)
   | CDecl decls ->
     let* env', bindings = extend_with decls env in
     Ok
       ( bindings
         |> List.map (fun (name, value) ->
-          "val " ^ string_of_name name, string_of_value value)
+          "val " ^ string_of_name name, Value.string_of_value value)
       , env' )
   | CDeclRec decls ->
     let* env' = extend_with_r decls env in

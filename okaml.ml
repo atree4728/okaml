@@ -1,5 +1,5 @@
 let rec read_eval_print env tyenv lexbuf =
-  let open Myresult in
+  let open Result in
   print_string "# ";
   flush stdout;
   try
@@ -12,12 +12,12 @@ let rec read_eval_print env tyenv lexbuf =
         let* prompts, newenv = Eval.eval_command env cmd in
         List.combine tys prompts
         |> List.iter (fun (ty, (prompt, value_string)) ->
-          Printf.printf "%s : %s = %s\n" prompt (Types.string_of_type ty) value_string);
+          Printf.printf "%s : %s = %s\n" prompt (Type.string_of_type ty) value_string);
         Ok (read_eval_print newenv newtyenv lexbuf)
       in
       Result.fold
         ~ok:Fun.id
-        ~error:(fun err -> raise (Failure (Types.string_of_error err)))
+        ~error:(fun err -> raise (Failure (Error.string_of_error err)))
         continue
   with
   | Failure msg ->

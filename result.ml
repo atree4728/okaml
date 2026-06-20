@@ -1,8 +1,7 @@
 include Stdlib.Result
+include Stdlib.Result.Syntax
 
-let ( let* ) = bind
 let ( >>= ) = bind
-let pure = ok
 
 let sequence (xs : ('a, 'e) result list) : ('a list, 'e) result =
   List.fold_right
@@ -16,9 +15,4 @@ let sequence (xs : ('a, 'e) result list) : ('a list, 'e) result =
 
 let map_m (f : 'a -> ('b, 'e) result) (xs : 'a list) : ('b list, 'e) result =
   xs |> List.map f |> sequence
-;;
-
-let alternative = function
-  | Ok ok -> Fun.const (Ok ok)
-  | Error _ -> Fun.id
 ;;

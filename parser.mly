@@ -1,5 +1,5 @@
 %{
-open Types
+open Syntax
 
 let rec to_curried_fun (args : name list) (expr : expr) =
   match args with

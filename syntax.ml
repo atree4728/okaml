@@ -8,19 +8,7 @@ type pattern =
   | PNil
   | PCons of pattern * pattern
 
-module M = Map.Make (String)
-
-type 'a env = Env of 'a M.t
-
-and value =
-  | VInt of int
-  | VBool of bool
-  | VPair of value * value
-  | VList of value list
-  | VFun of name * expr * value env
-  | VRecFun of int * (name * expr) list * value env
-
-and expr =
+type expr =
   | EConstInt of int
   | EConstBool of bool
   | EVar of name
@@ -47,35 +35,7 @@ type command =
   | CDecl of (name * expr) list
   | CDeclRec of (name * expr) list
 
-type tyvar = Idx of int
-
-type ty =
-  | TyInt
-  | TyBool
-  | TyFun of ty * ty
-  | TyVar of tyvar
-  | TyPair of ty * ty
-  | TyList of ty
-
-type type_schema = TySchema of tyvar list * ty
-
-type evalError =
-  | Unbound of string
-  | UnexpectedType of string * string
-  | DivisionByZero of string
-  | MatchFailure of string
-  | RecursiveType of string * string
-  | LetRecForNonFunc
-
 let string_of_name (Name name) = name
-
-let rec string_of_value = function
-  | VInt i -> string_of_int i
-  | VBool b -> string_of_bool b
-  | VPair (a, b) -> Printf.sprintf "(%s, %s)" (string_of_value a) (string_of_value b)
-  | VList l -> Printf.sprintf "[%s]" (List.map string_of_value l |> String.concat "; ")
-  | VFun _ | VRecFun _ -> "<fun>"
-;;
 
 let rec string_of_pattern = function
   | PInt i -> string_of_int i
@@ -158,45 +118,4 @@ let string_of_command p =
          Printf.sprintf "CDeclRec(%s, %s)" (string_of_name name) (string_of_expr e))
       decls
     |> String.concat "; "
-;;
-
-let tag_of_value = function
-  | VInt _ -> "int"
-  | VBool _ -> "bool"
-  | VPair _ -> "pair"
-  | VList _ -> "list"
-  | VFun _ -> "fun"
-  | VRecFun _ -> "recfun"
-;;
-
-let string_of_tyvar (Idx i) = Printf.sprintf "'a%d" i
-
-let rec string_of_type = function
-  | TyInt -> "int"
-  | TyBool -> "bool"
-  | TyFun (t1, t2) -> Printf.sprintf "(%s -> %s)" (string_of_type t1) (string_of_type t2)
-  | TyVar a -> string_of_tyvar a
-  | TyPair (t1, t2) -> Printf.sprintf "(%s * %s)" (string_of_type t1) (string_of_type t2)
-  | TyList t -> Printf.sprintf "(%s list)" (string_of_type t)
-;;
-
-let string_of_type_schema (TySchema (abs_tyvars, ty)) =
-  Printf.sprintf
-    "∀ %s. %s"
-    (abs_tyvars |> List.map string_of_tyvar |> String.concat ", ")
-    (string_of_type ty)
-;;
-
-let string_of_error = function
-  | Unbound name -> "Error: Unbound value " ^ name
-  | UnexpectedType (actual, expected) ->
-    Printf.sprintf
-      "Error: The value has type `%s` but an expression was expected of type `%s`"
-      actual
-      expected
-  | DivisionByZero expr -> "Error: Division by zero: " ^ expr
-  | MatchFailure expr -> "Error: Match failure: " ^ expr
-  | RecursiveType (tyvar, ty) ->
-    Printf.sprintf "Error: Detected a recursive type definition: %s = %s" tyvar ty
-  | LetRecForNonFunc -> "Error: `let rec` is allowed only for function binding."
 ;;
