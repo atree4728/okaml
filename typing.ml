@@ -11,7 +11,7 @@ let instantiate (Type.Schema (abs_tyvars, ty)) =
   concretize ty
 ;;
 
-let rec infer_patten =
+let rec infer_pattern =
   let open Result in
   let open Type in
   function
@@ -23,24 +23,25 @@ let rec infer_patten =
     let new_binding = Env.singleton name type_schema in
     Ok (TyVar tv, [], new_binding)
   | PPair (l, r) ->
-    let* type_l, constr_l, new_binding_l = infer_patten l in
-    let* type_r, constr_r, new_binding_r = infer_patten r in
+    let* type_l, constr_l, new_binding_l = infer_pattern l in
+    let* type_r, constr_r, new_binding_r = infer_pattern r in
     let constr = constr_l @ constr_r in
-    let new_binding = Env.union new_binding_l new_binding_r in
+    let* new_binding = Env.exclusive_union new_binding_l new_binding_r in
     Ok (TyPair (type_l, type_r), constr, new_binding)
   | PNil ->
     let type_list = TyList (TyVar (Tyvar.fresh ())) in
     Ok (type_list, [], Env.empty)
   | PCons (hd, tl) ->
-    let* type_hd, constr_hd, new_binding_hd = infer_patten hd in
-    let* type_tl, constr_tl, new_binding_tl = infer_patten tl in
+    let* type_hd, constr_hd, new_binding_hd = infer_pattern hd in
+    let* type_tl, constr_tl, new_binding_tl = infer_pattern tl in
     let constr = ((TyList type_hd, type_tl) :: constr_hd) @ constr_tl in
-    Ok (type_tl, constr, Env.union new_binding_hd new_binding_tl)
+    let* new_binding = Env.exclusive_union new_binding_hd new_binding_tl in
+    Ok (type_tl, constr, new_binding)
 ;;
 
 let rec infer_branch tyenv (pattern, expr) =
   let open Result in
-  let* type_pattern, constr_pattern, new_binding = infer_patten pattern in
+  let* type_pattern, constr_pattern, new_binding = infer_pattern pattern in
   let tyenv' = Env.union tyenv new_binding in
   let* type_expr, constr_expr = infer_expr tyenv' expr in
   Ok (type_pattern, type_expr, constr_pattern @ constr_expr)

@@ -3,6 +3,7 @@ type t =
   | UnexpectedType of string * string
   | DivisionByZero of string
   | MatchFailure of string
+  | DuplicatedBound of string
   | RecursiveType of string * string
   | LetRecForNonFunc
 
@@ -15,6 +16,8 @@ let string_of_error = function
       expected
   | DivisionByZero expr -> "Error: Division by zero: " ^ expr
   | MatchFailure expr -> "Error: Match failure: " ^ expr
+  | DuplicatedBound name ->
+    Printf.sprintf "Error: Variable %s is bound several times in this matching" name
   | RecursiveType (tyvar, ty) ->
     Printf.sprintf "Error: Detected a recursive type definition: %s = %s" tyvar ty
   | LetRecForNonFunc -> "Error: `let rec` is allowed only for function binding."
