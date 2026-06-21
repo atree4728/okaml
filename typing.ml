@@ -45,46 +45,6 @@ let rec infer_branch tyenv (pattern, expr) =
   let* type_expr, constr_expr = infer_expr tyenv' expr in
   Ok (type_pattern, type_expr, constr_pattern @ constr_expr)
 
-and infer_let is_rec tyenv decls cont =
-  let open Result in
-  (* generate type variables and extend the environment with them, for the case of let rec *)
-  let tyenv' =
-    if is_rec
-    then
-      decls
-      |> List.map (fun (name, _) -> name, Type.schema_of @@ Type.TyVar (Tyvar.fresh ()))
-      |> Env.of_list
-      |> Env.union tyenv
-    else tyenv
-  in
-  let* inferred_triple =
-    decls
-    |> map_m (fun (name, expr) ->
-      let* ty, constr = infer_expr tyenv' expr in
-      if is_rec
-      then
-        (* link ty_placeholder to recursive uses *)
-        let* (Type.Schema (_, ty_placeholder)) = Env.lookup name tyenv' in
-        Ok (name, ty, (ty, ty_placeholder) :: constr)
-      else Ok (name, ty, constr))
-  in
-  let constr_bindings = List.concat_map (fun (_, _, constr) -> constr) inferred_triple in
-  let* subst = Constraints.unify constr_bindings in
-  (* weak type variables *)
-  (* the target of unifing is tyenv, not tyenv', because tyenv' necessarily knows binding targets so they cannot be polymorphic. *)
-  let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
-  let new_tyenv =
-    inferred_triple
-    |> List.map (fun (name, ty, _) ->
-      let unified_ty = Subst.apply subst ty in
-      let abs_tyvars = Tyvar.frees unified_tyenv unified_ty in
-      name, Type.Schema (abs_tyvars, unified_ty))
-    |> Env.of_list
-    |> Env.union unified_tyenv
-  in
-  let* type_cont, constr_cont = infer_expr new_tyenv cont in
-  Ok (type_cont, constr_cont @ constr_bindings)
-
 and infer_expr tyenv =
   let open Result in
   let open Type in
@@ -154,23 +114,64 @@ and infer_expr tyenv =
       ((type_func, TyFun (type_param, type_ret)) :: constr_func) @ constr_param
     in
     Ok (type_ret, constr)
+
+and infer_bindings is_rec tyenv decls =
+  let open Result in
+  (* generate type variables and extend the environment with them, for the case of let rec *)
+  let tyenv' =
+    if is_rec
+    then
+      decls
+      |> List.map (fun (name, _) -> name, Type.schema_of @@ Type.TyVar (Tyvar.fresh ()))
+      |> Env.of_list
+      |> Env.union tyenv
+    else tyenv
+  in
+  let* inferred_triple =
+    decls
+    |> map_m (fun (name, expr) ->
+      let* ty, constr = infer_expr tyenv' expr in
+      if is_rec
+      then
+        (* link ty_placeholder to recursive uses *)
+        let* (Type.Schema (_, ty_placeholder)) = Env.lookup name tyenv' in
+        Ok (name, ty, (ty, ty_placeholder) :: constr)
+      else Ok (name, ty, constr))
+  in
+  let pre_unified = inferred_triple |> List.map (fun (name, ty, _) -> name, ty) in
+  let constr_bindings = List.concat_map (fun (_, _, constr) -> constr) inferred_triple in
+  Ok (pre_unified, constr_bindings)
+
+and infer_let is_rec tyenv decls cont =
+  let open Result in
+  let* pre_unified, constr_bindings = infer_bindings is_rec tyenv decls in
+  let* subst = Constraints.unify constr_bindings in
+  (* weak type variables *)
+  (* the target of unifing is tyenv, not tyenv', because tyenv' necessarily knows binding targets so they cannot be polymorphic. *)
+  let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
+  let new_tyenv =
+    pre_unified
+    |> List.map (fun (name, ty) ->
+      let unified_ty = Subst.apply subst ty in
+      let abs_tyvars = Tyvar.frees unified_tyenv unified_ty in
+      name, Type.Schema (abs_tyvars, unified_ty))
+    |> Env.of_list
+    |> Env.union unified_tyenv
+  in
+  let* type_cont, constr_cont = infer_expr new_tyenv cont in
+  Ok (type_cont, constr_cont @ constr_bindings)
 ;;
 
 let infer_letcmd is_rec tyenv decls =
   let open Result in
-  let* ty_bindings =
-    decls
-    |> Result.map_m (fun (name, expr) ->
-      let dummy_expr =
-        if is_rec then ELetRec (decls, EVar name) else ELet ([ name, expr ], EVar name)
-      in
-      let* type_cont, constraints = infer_expr tyenv dummy_expr in
-      let* subst = Constraints.unify constraints in
-      Ok (name, Subst.apply subst type_cont))
+  let* pre_unified, constr_bindings = infer_bindings is_rec tyenv decls in
+  let* subst = Constraints.unify constr_bindings in
+  let unified =
+    pre_unified |> List.map (fun (name, ty) -> name, ty |> Subst.apply subst)
   in
-  let tys = List.map snd ty_bindings in
+  let tys = unified |> List.map snd in
   let new_tyenv =
-    ty_bindings
+    unified
     |> List.map (fun (name, ty) -> name, generalize tyenv ty)
     |> Env.of_list
     |> Env.union tyenv
