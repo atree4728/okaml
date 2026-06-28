@@ -32,125 +32,143 @@ let extend_with_r decls env =
   Ok (nenv |> Env.of_list |> Env.union env)
 ;;
 
-let rec eval_expr env expr =
+type 'a cont = ('a -> (Value.t, Error.t) result) -> (Value.t, Error.t) result
+
+let rec eval_expr env expr k =
   let open Result in
   let open Value in
   match expr with
-  | EConstInt n -> Ok (VInt n)
-  | EConstBool b -> Ok (VBool b)
-  | EVar name -> Env.lookup name env
+  | EConstInt n -> Ok (VInt n) >>= k
+  | EConstBool b -> Ok (VBool b) >>= k
+  | EVar name -> Env.lookup name env >>= k
   | EAdd (l, r) ->
-    let* l = eval_expr env l >>= expect_int in
-    let* r = eval_expr env r >>= expect_int in
-    Ok (VInt (l + r))
+    eval_expr env l (fun l ->
+      let* l = expect_int l in
+      eval_expr env r (fun r ->
+        let* r = expect_int r in
+        k @@ VInt (l + r)))
   | ESub (l, r) ->
-    let* l = eval_expr env l >>= expect_int in
-    let* r = eval_expr env r >>= expect_int in
-    Ok (VInt (l - r))
+    eval_expr env l (fun l ->
+      let* l = expect_int l in
+      eval_expr env r (fun r ->
+        let* r = expect_int r in
+        k @@ VInt (l - r)))
   | EMul (l, r) ->
-    let* l = eval_expr env l >>= expect_int in
-    let* r = eval_expr env r >>= expect_int in
-    Ok (VInt (l * r))
+    eval_expr env l (fun l ->
+      let* l = expect_int l in
+      eval_expr env r (fun r ->
+        let* r = expect_int r in
+        k @@ VInt (l * r)))
   | EDiv (l, r) ->
-    let* l' = eval_expr env l >>= expect_int in
-    let* r' = eval_expr env r >>= expect_int in
-    if r' = 0
-    then Error (DivisionByZero (string_of_expr (EDiv (l, r))))
-    else Ok (VInt (l' / r'))
-  | EEq (l, r) ->
-    let* l = eval_expr env l in
-    let* r = eval_expr env r in
-    Ok (VBool (l = r))
+    eval_expr env l (fun l' ->
+      let* l' = expect_int l' in
+      eval_expr env r (fun r' ->
+        let* r' = expect_int r' in
+        if r' = 0
+        then Error (DivisionByZero (string_of_expr (EDiv (l, r))))
+        else k @@ VInt (l' / r')))
+  | EEq (l, r) -> eval_expr env l (fun l -> eval_expr env r (fun r -> k @@ VBool (l = r)))
   | ELt (l, r) ->
-    let* l = eval_expr env l >>= expect_int in
-    let* r = eval_expr env r >>= expect_int in
-    Ok (VBool (l < r))
+    eval_expr env l (fun l ->
+      let* l = expect_int l in
+      eval_expr env r (fun r ->
+        let* r = expect_int r in
+        k @@ VBool (l < r)))
   | EAnd (l, r) ->
-    let* l = eval_expr env l >>= expect_bool in
-    if l
-    then eval_expr env r >>= expect_bool >>= fun b -> Ok (VBool b)
-    else Ok (VBool false)
+    eval_expr env l (fun l ->
+      let* l = expect_bool l in
+      if l
+      then
+        eval_expr env r (fun r ->
+          let* r = expect_bool r in
+          k @@ VBool r)
+      else k @@ VBool true)
   | EOr (l, r) ->
-    let* l = eval_expr env l >>= expect_bool in
-    if l
-    then Ok (VBool true)
-    else eval_expr env r >>= expect_bool >>= fun b -> Ok (VBool b)
+    eval_expr env l (fun l ->
+      let* l = expect_bool l in
+      if l
+      then k @@ VBool true
+      else
+        eval_expr env r (fun r ->
+          let* r = expect_bool r in
+          k @@ VBool r))
   | EIf (cnd, thn, els) ->
-    let* bcnd = eval_expr env cnd >>= expect_bool in
-    if bcnd then eval_expr env thn else eval_expr env els
-  | ELet (decls, cont) ->
-    let* env' = Result.map fst @@ extend_with decls env in
-    eval_expr env' cont
-  | ELetRec (decls, cont) ->
+    eval_expr env cnd (fun cnd ->
+      let* cnd = expect_bool cnd in
+      if cnd then eval_expr env thn k else eval_expr env els k)
+  | ELet (decls, body) ->
+    (* TODO: multiple declarations *)
+    assert (List.length decls = 1);
+    let name, expr = List.hd decls in
+    eval_expr env expr (fun value ->
+      let env' = Env.extend name value env in
+      eval_expr env' body k)
+  | ELetRec (decls, body) ->
     let* env' = extend_with_r decls env in
-    eval_expr env' cont
-  | ENil -> Ok (VList [])
+    eval_expr env' body k
+  | ENil -> k @@ VList []
   | ECons (hd, tl) ->
-    let* vhd = eval_expr env hd in
-    let* vtl = eval_expr env tl >>= expect_list in
-    Ok (VList (vhd :: vtl))
+    eval_expr env hd (fun hd ->
+      eval_expr env tl (fun tl ->
+        let* tl = expect_list tl in
+        k @@ VList (hd :: tl)))
   | EPair (l, r) ->
-    let* l = eval_expr env l in
-    let* r = eval_expr env r in
-    Ok (VPair (l, r))
+    eval_expr env l (fun l -> eval_expr env r (fun r -> k @@ VPair (l, r)))
   | EMatch (target, branches) ->
-    let* value = eval_expr env target in
-    let matched =
-      List.find_map
-        (fun (pattern, expr) ->
-           matches value pattern |> Option.map (fun binding -> expr, binding))
-        branches
-    in
-    let* expr, binding =
-      Option.to_result ~none:(Error.MatchFailure (string_of_expr target)) matched
-    in
-    eval_expr (Env.union env binding) expr
-  | EFun (arg, expr) -> Ok (VFun (arg, expr, env))
+    eval_expr env target (fun value ->
+      let matched =
+        List.find_map
+          (fun (pattern, expr) ->
+             matches value pattern |> Option.map (fun binding -> expr, binding))
+          branches
+      in
+      let* expr, binding =
+        Option.to_result ~none:(Error.MatchFailure (string_of_expr target)) matched
+      in
+      eval_expr (Env.union env binding) expr k)
+  | EFun (arg, expr) -> k @@ VFun (arg, expr, env)
   | EApp (func, param) ->
-    let* vfunc = eval_expr env func in
-    let* vparam = eval_expr env param in
-    (match vfunc with
-     | VFun (arg, expr, oenv) ->
-       let env' = oenv |> Env.extend arg vparam in
-       eval_expr env' expr
-     | VRecFun (idxf, mutrefs, oenv) ->
-       let env' =
-         mutrefs
-         |> List.mapi (fun i (self, expr) -> self, VRecFun (i, mutrefs, oenv))
-         |> Env.of_list
-         |> Env.union oenv
-       in
-       let _, recfun = List.nth mutrefs idxf in
-       let* arg, expr, _ = eval_expr env' recfun >>= expect_fun in
-       let env'' = env' |> Env.extend arg vparam in
-       eval_expr env'' expr
-     | _ -> Error (UnexpectedType (tag_of_value vfunc, "fun")))
-
-and extend_with decls env =
-  let open Result in
-  let* evaled =
-    map_m
-      (fun (name, expr) ->
-         let* value = eval_expr env expr in
-         Ok (name, value))
-      decls
-  in
-  Ok (Env.union env (Env.of_list evaled), evaled)
+    eval_expr env func (fun vfunc ->
+      eval_expr env param (fun vparam ->
+        match vfunc with
+        | VFun (arg, expr, oenv) ->
+          let env' = oenv |> Env.extend arg vparam in
+          eval_expr env' expr k
+        | VRecFun (idxf, mutrefs, oenv) ->
+          let env' =
+            mutrefs
+            |> List.mapi (fun i (self, expr) -> self, VRecFun (i, mutrefs, oenv))
+            |> Env.of_list
+            |> Env.union oenv
+          in
+          let _, recfun = List.nth mutrefs idxf in
+          eval_expr env' recfun (fun recfun ->
+            let* arg, expr, _ = expect_fun recfun in
+            let env'' = env' |> Env.extend arg vparam in
+            eval_expr env'' expr k)
+        | _ -> Error (UnexpectedType (tag_of_value vfunc, "fun"))))
 ;;
 
 let eval_command env command =
   let open Result in
   match command with
   | CExp expr ->
-    let* value = eval_expr env expr in
+    let* value = eval_expr env expr ok in
     Ok ([ "-", Value.string_of_value value ], env)
   | CDecl decls ->
-    let* env', bindings = extend_with decls env in
-    Ok
-      ( bindings
-        |> List.map (fun (name, value) ->
-          "val " ^ string_of_name name, Value.string_of_value value)
-      , env' )
+    let* evaled =
+      decls
+      |> Result.map_m (fun (name, expr) ->
+        let* value = eval_expr env expr ok in
+        Ok (name, value))
+    in
+    let* output =
+      evaled
+      |> Result.map_m (fun (name, value) ->
+        Ok ("val " ^ string_of_name name, Value.string_of_value value))
+    in
+    let env' = evaled |> Env.of_list |> Env.union env in
+    Ok (output, env')
   | CDeclRec decls ->
     let* env' = extend_with_r decls env in
     Ok (decls |> List.map (fun (name, _) -> "val " ^ string_of_name name, "<fun>"), env')
