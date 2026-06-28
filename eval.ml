@@ -97,12 +97,14 @@ let rec eval_expr env expr k =
       let* cnd = expect_bool cnd in
       if cnd then eval_expr env thn k else eval_expr env els k)
   | ELet (decls, body) ->
-    (* TODO: multiple declarations *)
-    assert (List.length decls = 1);
-    let name, expr = List.hd decls in
-    eval_expr env expr (fun value ->
-      let env' = Env.extend name value env in
-      eval_expr env' body k)
+    let run =
+      List.fold_right
+        (fun (name, expr) cont acc ->
+           eval_expr env expr (fun value -> cont (Env.extend name value acc)))
+        decls
+        (fun acc -> eval_expr acc body k)
+    in
+    run env
   | ELetRec (decls, body) ->
     let* env' = extend_with_r decls env in
     eval_expr env' body k
