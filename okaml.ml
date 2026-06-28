@@ -8,16 +8,12 @@ let rec read_eval_print env tyenv lexbuf =
     | None -> ()
     | Some cmd ->
       let continue =
-        (* let* tys, newtyenv = Typing.infer_cmd tyenv cmd in *)
+        let* tys, newtyenv = Typing.infer_cmd tyenv cmd in
         let* prompts, newenv = Eval.eval_command env cmd in
-        prompts
-        |> List.iter (fun (prompt, value_string) ->
-          Printf.printf "%s : (unknown) = %s\n" prompt value_string);
-        Ok (read_eval_print newenv Env.empty lexbuf)
-        (* List.combine tys prompts *)
-        (* |> List.iter (fun (ty, (prompt, value_string)) -> *)
-        (*   Printf.printf "%s : %s = %s\n" prompt ty value_string); *)
-        (* Ok (read_eval_print newenv newtyenv lexbuf) *)
+        List.combine tys prompts
+        |> List.iter (fun (ty, (prompt, value_string)) ->
+          Printf.printf "%s : %s = %s\n" prompt ty value_string);
+        Ok (read_eval_print newenv newtyenv lexbuf)
       in
       Result.fold
         ~ok:Fun.id

@@ -8,7 +8,7 @@ let fresh () =
 let rec tyvars_list ty =
   let open Type in
   let rec aux = function
-    | TyInt | TyBool -> []
+    | TyInt | TyBool | TyToplevel -> []
     | TyFun (t1, t2) | TyPair (t1, t2) -> aux t1 @ aux t2
     | TyVar name -> [ name ]
     | TyList t -> aux t

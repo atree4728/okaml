@@ -7,6 +7,7 @@ type t =
   | TyVar of tyvar
   | TyPair of t * t
   | TyList of t
+  | TyToplevel
 
 type schema = Schema of tyvar list * t
 
@@ -21,6 +22,7 @@ let rec string_of_type = function
   | TyVar a -> string_of_tyvar a
   | TyPair (t1, t2) -> Printf.sprintf "(%s * %s)" (string_of_type t1) (string_of_type t2)
   | TyList t -> Printf.sprintf "(%s list)" (string_of_type t)
+  | TyToplevel -> "toplevel"
 ;;
 
 let string_of_type_schema (Schema (abs_tyvars, ty)) =
