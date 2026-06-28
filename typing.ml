@@ -170,7 +170,7 @@ let infer_letcmd is_rec tyenv decls =
   let unified =
     pre_unified |> List.map (fun (name, ty) -> name, ty |> Subst.apply subst)
   in
-  let tys = unified |> List.map snd in
+  let tys = unified |> List.map (fun (_, ty) -> Type.string_of_type ty) in
   let new_tyenv =
     unified
     |> List.map (fun (name, ty) -> name, generalize tyenv ty)
@@ -187,7 +187,7 @@ let infer_cmd tyenv command =
     let* type_expr, constraints = infer_expr tyenv expr in
     let* subst = Constraints.unify constraints in
     let unified = Subst.apply subst type_expr in
-    Ok ([ unified ], tyenv)
+    Ok ([ Type.string_of_type unified ], tyenv)
   | CDecl decls -> infer_letcmd false tyenv decls
   | CDeclRec decls -> infer_letcmd true tyenv decls
 ;;
