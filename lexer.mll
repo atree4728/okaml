@@ -35,6 +35,8 @@ rule main = parse
 | ","          { Parser.COMMA }
 | ";;"         { Parser.SEMISEMI }
 | ";"          { Parser.SEMI }
+| "shift"      { Parser.SHIFT }
+| "reset"      { Parser.RESET }
 | digit+ as n  { Parser.INT (int_of_string n) }
 | ident  as id { Parser.ID id }
 | eof          { Parser.EOF }

@@ -29,6 +29,8 @@ type expr =
   | EMatch of expr * (pattern * expr) list
   | EFun of name * expr
   | EApp of expr * expr
+  | EShift of name * expr
+  | EReset of expr
 
 type command =
   | CExp of expr
@@ -38,14 +40,14 @@ type command =
 let string_of_name (Name name) = name
 
 let rec string_of_pattern = function
-  | PInt i -> string_of_int i
-  | PBool b -> string_of_bool b
-  | PVar name -> string_of_name name
+  | PInt i -> Printf.sprintf "PInt(%d)" i
+  | PBool b -> Printf.sprintf "PInt(%b)" b
+  | PVar name -> Printf.sprintf "PVar(%s)" (string_of_name name)
   | PPair (p1, p2) ->
-    Printf.sprintf "(%s, %s)" (string_of_pattern p1) (string_of_pattern p2)
-  | PNil -> "[]"
+    Printf.sprintf "PPair(%s, %s)" (string_of_pattern p1) (string_of_pattern p2)
+  | PNil -> "PNil"
   | PCons (p1, p2) ->
-    Printf.sprintf "%s :: %s" (string_of_pattern p1) (string_of_pattern p2)
+    Printf.sprintf "PCons(%s, %s)" (string_of_pattern p1) (string_of_pattern p2)
 ;;
 
 let rec string_of_expr = function
@@ -101,6 +103,9 @@ let rec string_of_expr = function
             pats))
   | EFun (arg, e) -> Printf.sprintf "EFun(%s, %s)" (string_of_name arg) (string_of_expr e)
   | EApp (e1, e2) -> Printf.sprintf "EApp(%s, %s)" (string_of_expr e1) (string_of_expr e2)
+  | EShift (cont_name, expr) ->
+    Printf.sprintf "EShift(%s, %s)" (string_of_name cont_name) (string_of_expr expr)
+  | EReset expr -> Printf.sprintf "EReset(%s)" (string_of_expr expr)
 ;;
 
 let string_of_command p =

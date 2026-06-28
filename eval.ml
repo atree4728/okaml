@@ -32,8 +32,6 @@ let extend_with_r decls env =
   Ok (nenv |> Env.of_list |> Env.union env)
 ;;
 
-type 'a cont = ('a -> (Value.t, Error.t) result) -> (Value.t, Error.t) result
-
 let rec eval_expr env expr k =
   let open Result in
   let open Value in
@@ -148,7 +146,12 @@ let rec eval_expr env expr k =
             let* arg, expr, _ = expect_fun recfun in
             let env'' = env' |> Env.extend arg vparam in
             eval_expr env'' expr k)
+        | VCont cont -> cont vparam >>= k
         | _ -> Error (UnexpectedType (tag_of_value vfunc, "fun"))))
+  | EReset expr -> eval_expr env expr ok >>= k
+  | EShift (arg, expr) ->
+    let env' = Env.extend arg (VCont k) env in
+    eval_expr env' expr ok
 ;;
 
 let eval_command env command =

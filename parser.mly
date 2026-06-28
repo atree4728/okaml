@@ -21,6 +21,7 @@ let rec to_curried_fun (args : name list) (expr : expr) =
 %token ARROW
 %token LBRACKET RBRACKET CONS COMMA
 %token MATCH WITH BAR
+%token SHIFT RESET
 %token SEMI SEMISEMI
 %token EOF
 
@@ -99,8 +100,10 @@ expr:
   | atomic_expr                 { $1 }
 
 app_expr:
-  | app_expr    atomic_expr { EApp ($1, $2) }
-  | atomic_expr atomic_expr { EApp ($1, $2) }
+  | app_expr    atomic_expr                  { EApp ($1, $2) }
+  | atomic_expr atomic_expr                  { EApp ($1, $2) }
+  | RESET LPAR FUN LPAR RPAR ARROW expr RPAR { EReset ($7) }      (* reset (fun () -> expr ) *)
+  | SHIFT LPAR FUN id        ARROW expr RPAR { EShift ($4, $6) }  (* shift (fun id -> expr ) *)
 
 atomic_expr:
   | INT                         { EConstInt($1)  }

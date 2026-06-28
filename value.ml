@@ -7,6 +7,7 @@ type t =
   | VList of t list
   | VFun of name * expr * t Env.t
   | VRecFun of int * (name * expr) list * t Env.t
+  | VCont of (t -> (t, Error.t) result)
 
 let rec string_of_value = function
   | VInt i -> string_of_int i
@@ -14,6 +15,7 @@ let rec string_of_value = function
   | VPair (a, b) -> Printf.sprintf "(%s, %s)" (string_of_value a) (string_of_value b)
   | VList l -> Printf.sprintf "[%s]" (List.map string_of_value l |> String.concat "; ")
   | VFun _ | VRecFun _ -> "<fun>"
+  | VCont _ -> "<cont>"
 ;;
 
 let tag_of_value = function
@@ -23,6 +25,7 @@ let tag_of_value = function
   | VList _ -> "list"
   | VFun _ -> "fun"
   | VRecFun _ -> "recfun"
+  | VCont _ -> "vcont"
 ;;
 
 let expect_int = function
