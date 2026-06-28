@@ -1,8 +1,7 @@
-(executable
+(library
  (name okaml)
  (modes byte)
- (flags (:standard -warn-error -a))
- (promote (until-clean)))
+ (flags (:standard -warn-error -a)))
 
 (ocamllex (modules lexer))
 (menhir (modules parser))

@@ -1,0 +1,6 @@
+(executable
+ (name okaml)
+ (libraries okaml)
+ (modes byte)
+ (flags (:standard -warn-error -a -open Okaml))
+ (promote (until-clean)))
