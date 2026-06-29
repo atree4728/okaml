@@ -6,6 +6,7 @@ type t =
   | DuplicatedBound of string
   | RecursiveType of string * string
   | LetRecForNonFunc
+  | NonPure
 
 let string_of_error = function
   | Unbound name -> "Error: Unbound value " ^ name
@@ -24,4 +25,5 @@ let string_of_error = function
   | RecursiveType (tyvar, ty) ->
     Printf.sprintf "Error: Detected a recursive type definition: %s = %s." tyvar ty
   | LetRecForNonFunc -> "Error: `let rec` is allowed only for function binding."
+  | NonPure -> "Error: This expression is not pure."
 ;;

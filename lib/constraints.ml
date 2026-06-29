@@ -6,7 +6,8 @@ let rec unify =
   function
   | [] -> Ok []
   | (s, t) :: rest when s = t -> unify rest
-  | (TyFun (s, t), TyFun (s', t')) :: rest -> unify @@ ((s, s') :: (t, t') :: rest)
+  | (TyFun (t1, a, t2, b), TyFun (s1, c, s2, d)) :: rest ->
+    unify @@ ((t1, s1) :: (a, c) :: (t2, s2) :: (b, d) :: rest)
   | (TyPair (s, t), TyPair (s', t')) :: rest -> unify @@ ((s, s') :: (t, t') :: rest)
   | (TyList s, TyList t) :: rest -> unify @@ ((s, t) :: rest)
   | (TyVar a, t) :: rest | (t, TyVar a) :: rest ->

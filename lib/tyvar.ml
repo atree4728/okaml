@@ -9,8 +9,9 @@ let rec tyvars_list ty =
   let open Type in
   let rec aux = function
     | TyInt | TyBool | TyToplevel -> []
-    | TyFun (t1, t2) | TyPair (t1, t2) -> aux t1 @ aux t2
+    | TyFun (t1, a, t2, b) -> List.concat_map aux [ t1; a; t2; b ]
     | TyVar name -> [ name ]
+    | TyPair (t1, t2) -> List.concat_map aux [ t1; t2 ]
     | TyList t -> aux t
   in
   aux ty |> List.sort_uniq compare

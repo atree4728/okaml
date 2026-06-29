@@ -5,7 +5,7 @@ let apply_to_schema sub (Type.Schema (abs_tyvars, ty)) =
   let rec aux = function
     | TyInt -> TyInt
     | TyBool -> TyBool
-    | TyFun (t1, t2) -> TyFun (aux t1, aux t2)
+    | TyFun (t1, a, t2, b) -> TyFun (aux t1, aux a, aux t2, aux b)
     | TyVar tyvar ->
       let sub' = List.filter (fun (name, _) -> not @@ List.mem name abs_tyvars) sub in
       List.assoc_opt tyvar sub' |> Option.value ~default:(TyVar tyvar)
