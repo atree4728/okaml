@@ -8,7 +8,7 @@ let fresh () =
 let rec tyvars_list ty =
   let open Type in
   let rec aux = function
-    | TyInt | TyBool | TyToplevel -> []
+    | TyInt | TyBool -> []
     | TyFun (t1, a, t2, b) -> List.concat_map aux [ t1; a; t2; b ]
     | TyVar name -> [ name ]
     | TyPair (t1, t2) -> List.concat_map aux [ t1; t2 ]

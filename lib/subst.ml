@@ -11,7 +11,6 @@ let apply_to_schema sub (Type.Schema (abs_tyvars, ty)) =
       List.assoc_opt tyvar sub' |> Option.value ~default:(TyVar tyvar)
     | TyPair (t1, t2) -> TyPair (aux t1, aux t2)
     | TyList t -> TyList (aux t)
-    | TyToplevel -> TyToplevel
   in
   Type.Schema (abs_tyvars, aux ty)
 ;;

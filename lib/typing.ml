@@ -249,7 +249,7 @@ let infer_letcmd is_rec tyenv decls =
   let unified =
     pre_unified |> List.map (fun (name, ty) -> name, ty |> Subst.apply subst)
   in
-  let tys = unified |> List.map (fun (_, ty) -> Type.string_of_type ty) in
+  let tys = unified |> List.map (fun (_, ty) -> Type.pretty_of_type ty) in
   let new_tyenv =
     unified
     |> List.map (fun (name, ty) -> name, generalize tyenv ty)
