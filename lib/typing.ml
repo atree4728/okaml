@@ -72,23 +72,27 @@ and infer_expr tyenv alpha =
   | EVar name ->
     let* ty = Env.lookup name tyenv in
     Ok (instantiate ty, alpha, [])
-    (* TODO *)
+    (*
+      Γ; β ⊢ l : int; γ    Γ; α ⊢ r : int; β
+      -------------------------------------- (plus)
+              Γ; α ⊢ l+r : int; γ
+    *)
   | EAdd (l, r) | ESub (l, r) | EMul (l, r) | EDiv (l, r) ->
-    let* type_l, bns, constr_l = infer_expr tyenv alpha l in
-    let* type_r, cns, constr_r = infer_expr tyenv bns r in
-    Ok (TyInt, cns, ((type_l, TyInt) :: (type_r, TyInt) :: constr_l) @ constr_r)
+    let* int', beta, constr_r = infer_expr tyenv alpha r in
+    let* int'', gamma, constr_l = infer_expr tyenv beta l in
+    Ok (TyInt, gamma, ((int', TyInt) :: (int'', TyInt) :: constr_l) @ constr_r)
   | ELt (l, r) ->
-    let* type_l, bns, constr_l = infer_expr tyenv alpha l in
-    let* type_r, cns, constr_r = infer_expr tyenv bns r in
-    Ok (TyBool, cns, ((type_l, TyInt) :: (type_r, TyInt) :: constr_l) @ constr_r)
+    let* int', beta, constr_r = infer_expr tyenv alpha r in
+    let* int'', gamma, constr_l = infer_expr tyenv beta l in
+    Ok (TyBool, gamma, ((int', TyInt) :: (int'', TyInt) :: constr_l) @ constr_r)
   | EEq (l, r) ->
-    let* type_l, bns, constr_l = infer_expr tyenv alpha l in
-    let* type_r, cns, constr_r = infer_expr tyenv bns r in
-    Ok (TyBool, cns, ((type_l, type_r) :: constr_l) @ constr_r)
+    let* ty, beta, constr_r = infer_expr tyenv alpha r in
+    let* ty', gamma, constr_l = infer_expr tyenv beta l in
+    Ok (TyBool, gamma, ((ty, ty') :: constr_l) @ constr_r)
   | EAnd (l, r) | EOr (l, r) ->
-    let* type_l, answer_type, constr_l = infer_expr tyenv alpha l in
-    let* type_r, answer_type, constr_r = infer_expr tyenv answer_type r in
-    Ok (TyBool, answer_type, ((type_l, TyBool) :: (type_r, TyBool) :: constr_l) @ constr_r)
+    let* bool', beta, constr_r = infer_expr tyenv alpha r in
+    let* bool'', gamma, constr_l = infer_expr tyenv beta l in
+    Ok (TyBool, gamma, ((bool', TyBool) :: (bool'', TyBool) :: constr_l) @ constr_r)
     (*
       Γ ; σ ⊢ cnd : bool ; β    Γ ; α ⊢ thn : τ ; σ    Γ ; α ⊢ els : τ ; σ
       ----------------------------------------------------------------- (if)
@@ -111,22 +115,22 @@ and infer_expr tyenv alpha =
   | ELetRec (decls, body) -> infer_let true tyenv alpha decls body
   | ENil -> Ok (TyList (TyVar (Tyvar.fresh ())), alpha, [])
   | ECons (hd, tl) ->
-    let* type_hd, answer_type, constr_hd = infer_expr tyenv alpha hd in
-    let* type_tl, answer_type, constr_tl = infer_expr tyenv answer_type tl in
-    Ok (type_tl, answer_type, ((TyList type_hd, type_tl) :: constr_hd) @ constr_tl)
+    let* type_tl, beta, constr_tl = infer_expr tyenv alpha tl in
+    let* type_hd, gamma, constr_hd = infer_expr tyenv beta hd in
+    Ok (type_tl, gamma, ((TyList type_hd, type_tl) :: constr_hd) @ constr_tl)
   | EPair (l, r) ->
-    let* type_l, answer_type, constr_l = infer_expr tyenv alpha l in
-    let* type_r, answer_type, constr_r = infer_expr tyenv answer_type r in
-    Ok (TyPair (type_l, type_r), answer_type, constr_l @ constr_r)
+    let* type_r, beta, constr_r = infer_expr tyenv alpha r in
+    let* type_l, gamma, constr_l = infer_expr tyenv beta l in
+    Ok (TyPair (type_l, type_r), gamma, constr_l @ constr_r)
   | EMatch (target, branches) ->
-    let* type_target, answer_type, constr_target = infer_expr tyenv alpha target in
+    let* type_target, beta, constr_target = infer_expr tyenv alpha target in
     let type_ret = TyVar (Tyvar.fresh ()) in
     let answer_type_whole = TyVar (Tyvar.fresh ()) in
     let* constr =
       branches
       |> Result.map_m (fun branch ->
         let* type_pattern, answer_type, type_expr, constr_branch =
-          infer_branch tyenv answer_type branch
+          infer_branch tyenv beta branch
         in
         Ok
           ((type_target, type_pattern)
