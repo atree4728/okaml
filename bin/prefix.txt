@@ -1,0 +1,8 @@
+let rec visit lst =
+  match lst with
+  | [] -> shift (fun k -> [])
+  | a :: rest -> a :: shift (fun k -> k [] :: reset (fun () -> k (visit rest)))
+;;
+
+let prefx lst = reset (fun () -> visit lst)
+;;

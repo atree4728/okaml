@@ -1,0 +1,5 @@
+let fold_left f init xs =
+  let rec impl acc xs = match xs with  [] -> acc | x :: xx -> impl (f acc x) xx in
+  impl init xs
+;;
+

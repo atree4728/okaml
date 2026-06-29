@@ -1,0 +1,1 @@
+let rec id x = if true then x else id x in (id 0, id true);;

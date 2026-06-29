@@ -1,0 +1,3 @@
+let rec fold_right f xs init =
+  match xs with [] -> init | x :: xx -> f x (fold_right f xx init)
+;;
