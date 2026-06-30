@@ -14,7 +14,7 @@ let schema_of ty = Schema ([], ty)
 let tyvar_of n = Idx n
 let string_of_tyvar (Idx i) = Printf.sprintf "'a%d" i
 
-let string_of_type' abs_tyvars ty =
+let string_of_type' pretty ty =
   let seen = ref [] in
   let name_of tyvar =
     match List.assoc_opt tyvar !seen with
@@ -44,13 +44,20 @@ let string_of_type' abs_tyvars ty =
      (4) int, bool, tyvar
   *)
   let is_purity_witness t t' =
-    t = t' && Option.map (List.mem t) abs_tyvars |> Option.is_some
+    let rec aux = function
+      | TyInt | TyBool -> 0
+      | TyFun (t1, a, t2, b) -> aux t1 + aux a + aux t2 + aux b
+      | TyVar name -> if name = t then 1 else 0
+      | TyPair (t1, t2) -> aux t1 + aux t2
+      | TyList t -> aux t
+    in
+    pretty && t = t' && aux ty = 2
   in
   let wrap paren s = if paren then Printf.sprintf "(%s)" s else s in
   let rec aux ctx = function
     | TyInt -> "int"
     | TyBool -> "bool"
-    | TyVar v -> if Option.is_some abs_tyvars then name_of v else string_of_tyvar v
+    | TyVar v -> if pretty then name_of v else string_of_tyvar v
     | TyList t -> Printf.sprintf "%s list" (aux 3 t) |> wrap (ctx > 3)
     | TyPair (t1, t2) ->
       let s1 = aux 3 t1 in
@@ -70,5 +77,5 @@ let string_of_type' abs_tyvars ty =
   aux 0 ty
 ;;
 
-let string_of_type = string_of_type' None
-let string_of_type_scheme (Schema (abs_tyvars, ty)) = string_of_type' (Some abs_tyvars) ty
+let string_of_type = string_of_type' false
+let pretty_of_type = string_of_type' true
