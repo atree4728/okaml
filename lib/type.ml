@@ -14,7 +14,7 @@ let schema_of ty = Schema ([], ty)
 let tyvar_of n = Idx n
 let string_of_tyvar (Idx i) = Printf.sprintf "'a%d" i
 
-let string_of_type' pretty ty =
+let string_of_type' abs_tyvars ty =
   let seen = ref [] in
   let name_of tyvar =
     match List.assoc_opt tyvar !seen with
@@ -30,46 +30,45 @@ let string_of_type' pretty ty =
       s
   in
   (* 
+     Maintain the current operator precedence
+     and print parentheses around an operator
+     only if its precedence is less than the current precedence.
+
+     c.f. https://ocaml.org/manual/5.4/coreexamples.html#s%3Apretty-printing
+
      priority:
-     (1) _ -> _ [left-assoc]
-     (2) _ / _
-     (3) _ list
-     (4) _ * _
-     (5) int, bool, tyvar
+     (0) _ -> _ [left-assoc]
+     (1) _ / _
+     (2) _ list
+     (3) _ * _
+     (4) int, bool, tyvar
   *)
-  let rec aux ctx ty =
-    let priority, s =
-      match ty with
-      | TyInt -> 5, "int"
-      | TyBool -> 5, "bool"
-      | TyVar v -> 5, if pretty then name_of v else string_of_tyvar v
-      | TyList t -> 4, Printf.sprintf "%s list" (aux 4 t)
-      | TyPair (t1, t2) ->
-        let s1 = aux 4 t1 in
-        let s2 = aux 4 t2 in
-        3, Printf.sprintf "%s * %s" s1 s2
-      | TyFun (t1, TyVar (Idx a), t2, TyVar (Idx b)) when a = b ->
-        let s1 = aux 2 t1 in
-        let s2 = aux 1 t2 in
-        1, Printf.sprintf "%s -> %s" s1 s2
-      | TyFun (t1, a, t2, b) ->
-        let s1 = aux 3 t1 in
-        let a = aux 3 a in
-        let s2 = aux 3 t2 in
-        let b = aux 3 b in
-        1, Printf.sprintf "%s / %s -> %s / %s" s1 a s2 b
-    in
-    if priority < ctx then Printf.sprintf "(%s)" s else s
+  let is_purity_witness t t' =
+    t = t' && Option.map (List.mem t) abs_tyvars |> Option.is_some
+  in
+  let wrap paren s = if paren then Printf.sprintf "(%s)" s else s in
+  let rec aux ctx = function
+    | TyInt -> "int"
+    | TyBool -> "bool"
+    | TyVar v -> if Option.is_some abs_tyvars then name_of v else string_of_tyvar v
+    | TyList t -> Printf.sprintf "%s list" (aux 3 t) |> wrap (ctx > 3)
+    | TyPair (t1, t2) ->
+      let s1 = aux 3 t1 in
+      let s2 = aux 3 t2 in
+      Printf.sprintf "%s * %s" s1 s2 |> wrap (ctx > 2)
+    | TyFun (t1, TyVar a, t2, TyVar b) when is_purity_witness a b ->
+      let s1 = aux 1 t1 in
+      let s2 = aux 0 t2 in
+      Printf.sprintf "%s -> %s" s1 s2 |> wrap (ctx > 0)
+    | TyFun (t1, a, t2, b) ->
+      let s1 = aux 2 t1 in
+      let a = aux 2 a in
+      let s2 = aux 2 t2 in
+      let b = aux 2 b in
+      Printf.sprintf "%s / %s -> %s / %s" s1 a s2 b |> wrap (ctx > 0)
   in
   aux 0 ty
 ;;
 
-let pretty_of_type = string_of_type' true
-let string_of_type = string_of_type' false
-
-let string_of_type_schema (Schema (abs_tyvars, ty)) =
-  Printf.sprintf
-    "∀ %s. %s"
-    (abs_tyvars |> List.map string_of_tyvar |> String.concat ", ")
-    (string_of_type ty)
-;;
+let string_of_type = string_of_type' None
+let string_of_type_scheme (Schema (abs_tyvars, ty)) = string_of_type' (Some abs_tyvars) ty

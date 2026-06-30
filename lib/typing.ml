@@ -251,15 +251,11 @@ let infer_letcmd is_rec tyenv decls =
     | _ -> Error Error.NonPure
   in
   let unified =
-    pre_unified |> List.map (fun (name, ty) -> name, ty |> Subst.apply subst)
+    pre_unified
+    |> List.map (fun (name, ty) -> name, ty |> Subst.apply subst |> generalize tyenv)
   in
-  let tys = unified |> List.map (fun (_, ty) -> Type.pretty_of_type ty) in
-  let new_tyenv =
-    unified
-    |> List.map (fun (name, ty) -> name, generalize tyenv ty)
-    |> Env.of_list
-    |> Env.union tyenv
-  in
+  let tys = unified |> List.map (fun (_, ty) -> Type.string_of_type_scheme ty) in
+  let new_tyenv = unified |> Env.of_list |> Env.union tyenv in
   Ok (tys, new_tyenv)
 ;;
 
