@@ -13,7 +13,7 @@ type schema = Schema of tyvar list * t
 let schema_of ty = Schema ([], ty)
 let tyvar_of n = Idx n
 let string_of_tyvar (Idx i) = Printf.sprintf "'a%d" i
-let answer_all = false (* corresponds to #answer "all" / "none" in OchaCaml *)
+let answer_all = true (* corresponds to #answer "all" / "none" in OchaCaml *)
 
 let string_of_type' pretty ty =
   let seen = ref [] in

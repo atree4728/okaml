@@ -1,0 +1,10 @@
+let rec append lst =
+  match lst with
+  | [] -> shift (fun k -> k)
+  | a :: rest -> a :: append rest
+;;
+
+let append123 = reset (fun () -> append [ 1; 2; 3 ])
+;;
+
+append123 [4; 5; 6];;

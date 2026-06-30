@@ -1,0 +1,14 @@
+let rec f x =
+  reset (fun () ->
+    x
+    + shift (fun k ->
+      let n = reset (fun () -> k 2) in
+      let b =
+        reset (fun () ->
+          let d = k 3 in
+          true)
+      in
+      if b then n else 0))
+;;
+
+f 1;;

@@ -14,8 +14,7 @@ let rec string_of_value = function
   | VBool b -> string_of_bool b
   | VPair (a, b) -> Printf.sprintf "(%s, %s)" (string_of_value a) (string_of_value b)
   | VList l -> Printf.sprintf "[%s]" (List.map string_of_value l |> String.concat "; ")
-  | VFun _ | VRecFun _ -> "<fun>"
-  | VCont _ -> "<cont>"
+  | VFun _ | VRecFun _ | VCont _ -> "<fun>"
 ;;
 
 let tag_of_value = function

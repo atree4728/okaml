@@ -1,0 +1,14 @@
+let rec reverse lst =
+  match lst with
+  | [] -> []
+  | a :: rest -> shift (fun k -> a :: k (reverse rest))
+;;
+
+let rec f lst =
+  match lst with
+  | [] -> []
+  | a :: rest -> if a then 0 :: f rest else 1 :: f rest
+;;
+
+let ans = reset (fun () -> f (reverse [ 1; 2; 3; 4; 5 ]))
+;;
