@@ -256,8 +256,8 @@ let infer_cmd tyenv command =
   let open Result in
   match command with
   | CExp expr ->
-    let* unified, _, _ = infer_pure tyenv expr in
-    Ok ([ Type.pretty_of_type unified ], tyenv)
+    let* preunified, subst, _ = infer_pure tyenv expr in
+    Ok ([ preunified |> Subst.apply subst |> Type.pretty_of_type ], tyenv)
   | CDecl decls ->
     let name, expr = List.hd decls in
     let* preunified, subst, constr = infer_pure tyenv expr in

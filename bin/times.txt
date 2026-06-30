@@ -3,3 +3,5 @@ let rec times lst =
   | [] -> 1
   | a :: rest -> if a = 0 then shift (fun k -> 0) else a * times rest
 ;;
+
+reset (fun() -> times [1; 2; 0; 2]);;
