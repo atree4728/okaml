@@ -11,6 +11,20 @@ let instantiate (Type.Schema (abs_tyvars, ty)) =
   concretize ty
 ;;
 
+let polymorphic_let tyenv constr preunified =
+  let open Result in
+  let* subst = Constraints.unify constr in
+  let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
+  let unified = preunified |> List.map (fun (name, ty) -> name, Subst.apply subst ty) in
+  let new_tyenv =
+    unified
+    |> List.map (fun (name, ty) -> name, generalize unified_tyenv ty)
+    |> Env.of_list
+    |> Env.union unified_tyenv
+  in
+  Ok (unified, new_tyenv)
+;;
+
 let rec infer_pattern =
   let open Result in
   let open Type in
@@ -46,6 +60,31 @@ let rec infer_branch tyenv answer_type (pattern, expr) =
   let* type_expr, answer_type', constr_expr = infer_expr tyenv' answer_type expr in
   Ok (type_pattern, answer_type', type_expr, constr_pattern @ constr_expr)
 
+and infer_pure tyenv expr =
+  let open Result in
+  let purity_witness = Type.TyVar (Tyvar.fresh ()) in
+  let* preunified, purity_witness', constr = infer_expr tyenv purity_witness expr in
+  let* subst = Constraints.unify constr in
+  (* purity checking *)
+  let* () =
+    match Subst.apply subst purity_witness, Subst.apply subst purity_witness' with
+    | TyVar p, TyVar p' when p = p' -> Ok ()
+    | _ -> Error Error.NonPure
+  in
+  Ok (preunified, subst, constr)
+
+(*
+      Γ; β ⊢ l : int; γ    Γ; α ⊢ r : int; β
+      -------------------------------------- (plus)
+              Γ; α ⊢ l+r : int; γ
+*)
+and infer_binop tyenv alpha l r handler =
+  let open Result in
+  let* ty_r, beta, constr_r = infer_expr tyenv alpha r in
+  let* ty_l, gamma, constr_l = infer_expr tyenv beta l in
+  let ty, extra = handler ty_l ty_r in
+  Ok (ty, gamma, (extra @ constr_l) @ constr_r)
+
 and infer_expr tyenv alpha =
   let open Result in
   let open Type in
@@ -66,27 +105,12 @@ and infer_expr tyenv alpha =
   | EVar name ->
     let* ty = Env.lookup name tyenv in
     Ok (instantiate ty, alpha, [])
-    (*
-      Γ; β ⊢ l : int; γ    Γ; α ⊢ r : int; β
-      -------------------------------------- (plus)
-              Γ; α ⊢ l+r : int; γ
-    *)
   | EAdd (l, r) | ESub (l, r) | EMul (l, r) | EDiv (l, r) ->
-    let* int', beta, constr_r = infer_expr tyenv alpha r in
-    let* int'', gamma, constr_l = infer_expr tyenv beta l in
-    Ok (TyInt, gamma, ((int', TyInt) :: (int'', TyInt) :: constr_l) @ constr_r)
-  | ELt (l, r) ->
-    let* int', beta, constr_r = infer_expr tyenv alpha r in
-    let* int'', gamma, constr_l = infer_expr tyenv beta l in
-    Ok (TyBool, gamma, ((int', TyInt) :: (int'', TyInt) :: constr_l) @ constr_r)
-  | EEq (l, r) ->
-    let* ty, beta, constr_r = infer_expr tyenv alpha r in
-    let* ty', gamma, constr_l = infer_expr tyenv beta l in
-    Ok (TyBool, gamma, ((ty, ty') :: constr_l) @ constr_r)
+    infer_binop tyenv alpha l r (fun l r -> TyInt, [ l, TyInt; r, TyInt ])
+  | ELt (l, r) -> infer_binop tyenv alpha l r (fun l r -> TyBool, [ l, TyInt; r, TyInt ])
+  | EEq (l, r) -> infer_binop tyenv alpha l r (fun l r -> TyBool, [ l, r ])
   | EAnd (l, r) | EOr (l, r) ->
-    let* bool', beta, constr_r = infer_expr tyenv alpha r in
-    let* bool'', gamma, constr_l = infer_expr tyenv beta l in
-    Ok (TyBool, gamma, ((bool', TyBool) :: (bool'', TyBool) :: constr_l) @ constr_r)
+    infer_binop tyenv alpha l r (fun l r -> TyBool, [ l, TyBool; r, TyBool ])
     (*
       Γ ; σ ⊢ cnd : bool ; β    Γ ; α ⊢ thn : τ ; σ    Γ ; α ⊢ els : τ ; σ
       ----------------------------------------------------------------- (if)
@@ -113,47 +137,14 @@ and infer_expr tyenv alpha =
   | ELet (decls, body) ->
     let open Result in
     assert (List.length decls = 1);
-    (* infer to be pure *)
     let name, expr = List.hd decls in
-    let purity_witness = Type.TyVar (Tyvar.fresh ()) in
-    let* sigma, purity_witness', constr_bindings = infer_expr tyenv purity_witness expr in
-    let pre_unified = [ name, sigma ] in
-    let* subst = Constraints.unify constr_bindings in
-    (* purity checking *)
-    let* () =
-      match Subst.apply subst purity_witness, Subst.apply subst purity_witness' with
-      | TyVar p, TyVar p' when p = p' -> Ok ()
-      | _ -> Error Error.NonPure
-    in
-    let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
-    let new_tyenv =
-      pre_unified
-      |> List.map (fun (name, ty) ->
-        let unified_ty = Subst.apply subst ty in
-        let abs_tyvars = Tyvar.frees unified_tyenv unified_ty in
-        name, Type.Schema (abs_tyvars, unified_ty))
-      |> Env.of_list
-      |> Env.union unified_tyenv
-    in
+    let* sigma, subst, constr_bindings = infer_pure tyenv expr in
+    let* _, new_tyenv = polymorphic_let tyenv constr_bindings [ name, sigma ] in
     let* tau, beta, constr_body = infer_expr new_tyenv alpha body in
     Ok (tau, beta, constr_body @ constr_bindings)
   | ELetRec (decls, body) ->
-    assert (List.length decls = 1);
-    let self, fun_expr = List.hd decls in
-    let* arg, expr =
-      match fun_expr with
-      | EFun (arg, expr) -> Ok (arg, expr)
-      | _ -> Error Error.LetRecForNonFunc
-    in
-    let* sigma, constr_fix = infer_fix tyenv self arg expr in
-    (* let-polymoriphism *)
-    let* subst = Constraints.unify constr_fix in
-    let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
-    let new_tyenv =
-      let unified = Subst.apply subst sigma in
-      let abs_tyvars = Tyvar.frees unified_tyenv unified in
-      Env.extend self (Type.Schema (abs_tyvars, unified)) unified_tyenv
-    in
+    let* preunified, constr_fix = infer_letrec tyenv decls in
+    let* _, new_tyenv = polymorphic_let tyenv constr_fix preunified in
     let* tau, beta, constr_body = infer_expr new_tyenv alpha body in
     Ok (tau, beta, constr_body @ constr_fix)
   | ENil -> Ok (TyList (TyVar (Tyvar.fresh ())), alpha, [])
@@ -233,78 +224,49 @@ and infer_expr tyenv alpha =
     let* sigma', beta, constr = infer_expr tyenv' sigma expr in
     Ok (tau, beta, (sigma, sigma') :: constr)
 
-(*
-  Γ, f : (σ/α → τ/β), x : σ; α ⊢ e : τ; β
-  ----------------------------------------- (fix)
-        Γ ⊢p fix f.x.e : (σ/α → τ/β)
-*)
-and infer_fix tyenv self arg expr =
+and infer_letrec tyenv decls =
   let open Result in
+  assert (List.length decls = 1);
+  let self, fun_expr = List.hd decls in
+  let* arg, expr =
+    match fun_expr with
+    | EFun (arg, expr) -> Ok (arg, expr)
+    | _ -> Error Error.LetRecForNonFunc
+  in
+  (*
+    Γ, f : (σ/α → τ/β), x : σ; α ⊢ e : τ; β
+    ----------------------------------------- (fix)
+          Γ ⊢p fix f.x.e : (σ/α → τ/β)
+  *)
   let sigma = Type.TyVar (Tyvar.fresh ()) in
   let alpha = Type.TyVar (Tyvar.fresh ()) in
   let tau = Type.TyVar (Tyvar.fresh ()) in
   let beta = Type.TyVar (Tyvar.fresh ()) in
-  let ty = Type.TyFun (sigma, alpha, tau, beta) in
+  let preunified = Type.TyFun (sigma, alpha, tau, beta) in
   let tyenv' =
-    tyenv |> Env.extend self (Type.schema_of ty) |> Env.extend arg (Type.schema_of sigma)
+    tyenv
+    |> Env.extend self (Type.schema_of preunified)
+    |> Env.extend arg (Type.schema_of sigma)
   in
   let* tau', beta', constr = infer_expr tyenv' alpha expr in
-  Ok (ty, (beta, beta') :: (tau, tau') :: constr)
+  Ok ([ self, preunified ], (beta, beta') :: (tau, tau') :: constr)
 ;;
 
 let infer_cmd tyenv command =
   let open Result in
   match command with
   | CExp expr ->
-    let purity_witness = Type.TyVar (Tyvar.fresh ()) in
-    let* ty, purity_witness', constr_bindings = infer_expr tyenv purity_witness expr in
-    let* subst = Constraints.unify constr_bindings in
-    (* purity checking *)
-    let* () =
-      match Subst.apply subst purity_witness, Subst.apply subst purity_witness' with
-      | TyVar p, TyVar p' when p = p' -> Ok ()
-      | _ -> Error Error.NonPure
-    in
-    let unified = Subst.apply subst ty in
+    let* unified, _, _ = infer_pure tyenv expr in
     Ok ([ Type.pretty_of_type unified ], tyenv)
   | CDecl decls ->
-    (* infer to be pure *)
     let name, expr = List.hd decls in
-    let purity_witness = Type.TyVar (Tyvar.fresh ()) in
-    let* sigma, purity_witness', constr_bindings = infer_expr tyenv purity_witness expr in
-    let pre_unified = [ name, sigma ] in
-    let* subst = Constraints.unify constr_bindings in
-    (* purity checking *)
-    let* () =
-      match Subst.apply subst purity_witness, Subst.apply subst purity_witness' with
-      | TyVar p, TyVar p' when p = p' -> Ok ()
-      | _ -> Error Error.NonPure
-    in
-    let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
-    let unified =
-      pre_unified |> List.map (fun (name, ty) -> name, Subst.apply subst ty)
-    in
-    let tys = unified |> List.map (fun (_, ty) -> Type.pretty_of_type ty) in
-    let new_tyenv =
-      unified
-      |> List.map (fun (name, ty) -> name, generalize unified_tyenv ty)
-      |> Env.of_list
-      |> Env.union unified_tyenv
-    in
-    Ok (tys, new_tyenv)
+    let* preunified, subst, constr = infer_pure tyenv expr in
+    let* unified, new_tyenv = polymorphic_let tyenv constr [ name, preunified ] in
+    let pretties = unified |> List.map (fun (_, ty) -> Type.pretty_of_type ty) in
+    Ok (pretties, new_tyenv)
   | CDeclRec decls ->
-    assert (List.length decls = 1);
-    let self, fun_expr = List.hd decls in
-    let* arg, expr =
-      match fun_expr with
-      | EFun (arg, expr) -> Ok (arg, expr)
-      | _ -> Error Error.LetRecForNonFunc
-    in
-    let* sigma, constr_fix = infer_fix tyenv self arg expr in
-    (* let-polymoriphism *)
-    let* subst = Constraints.unify constr_fix in
-    let unified_tyenv = Env.map (Subst.apply_to_schema subst) tyenv in
-    let unified = Subst.apply subst sigma in
-    let new_tyenv = Env.extend self (generalize unified_tyenv unified) unified_tyenv in
-    Ok ([ Type.pretty_of_type unified ], new_tyenv)
+    let* preunified, constr_fix = infer_letrec tyenv decls in
+    let* unified, new_tyenv = polymorphic_let tyenv constr_fix preunified in
+    let pretties = unified |> List.map (fun (_, ty) -> Type.pretty_of_type ty) in
+    Ok (pretties, new_tyenv)
 ;;
