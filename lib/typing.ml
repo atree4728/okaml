@@ -53,12 +53,12 @@ let rec infer_pattern =
     Ok (type_tl, constr, new_binding)
 ;;
 
-let rec infer_branch tyenv answer_type (pattern, expr) =
+let rec infer_branch tyenv alpha (pattern, expr) =
   let open Result in
   let* type_pattern, constr_pattern, new_binding = infer_pattern pattern in
   let tyenv' = Env.union tyenv new_binding in
-  let* type_expr, answer_type', constr_expr = infer_expr tyenv' answer_type expr in
-  Ok (type_pattern, answer_type', type_expr, constr_pattern @ constr_expr)
+  let* type_expr, beta, constr_expr = infer_expr tyenv' alpha expr in
+  Ok (type_pattern, beta, type_expr, constr_pattern @ constr_expr)
 
 and infer_pure tyenv expr =
   let open Result in
@@ -113,22 +113,19 @@ and infer_expr tyenv alpha =
     infer_binop tyenv alpha l r (fun l r -> TyBool, [ l, TyBool; r, TyBool ])
     (*
       Γ ; σ ⊢ cnd : bool ; β    Γ ; α ⊢ thn : τ ; σ    Γ ; α ⊢ els : τ ; σ
-      ----------------------------------------------------------------- (if)
+      -------------------------------------------------------------------- (if)
                      Γ ; α ⊢ if cnd then thn else els : τ ; β
     *)
   | EIf (cnd, thn, els) ->
-    let* type_cnd, answer_type, constr_cnd = infer_expr tyenv alpha cnd in
-    let* type_thn, answer_type_thn, constr_thn = infer_expr tyenv answer_type thn in
-    let* type_els, answer_type_els, constr_els = infer_expr tyenv answer_type els in
+    let* tau, sigma, constr_thn = infer_expr tyenv alpha thn in
+    let* tau', sigma', constr_els = infer_expr tyenv alpha els in
+    let* bool', beta, constr_cnd = infer_expr tyenv sigma cnd in
     let constr =
-      ((type_cnd, TyBool)
-       :: (type_thn, type_els)
-       :: (answer_type_thn, answer_type_els)
-       :: constr_cnd)
+      ((bool', TyBool) :: (tau, tau') :: (sigma, sigma') :: constr_cnd)
       @ constr_thn
       @ constr_els
     in
-    Ok (type_thn, answer_type_thn, constr)
+    Ok (tau, beta, constr)
   (*
     Γ; ⊢p e1 : σ   Γ, x : Gen(σ; Γ); α ⊢ e2 : τ; β
     --------------------------------------------------- (let)
@@ -157,23 +154,23 @@ and infer_expr tyenv alpha =
     let* type_l, gamma, constr_l = infer_expr tyenv beta l in
     Ok (TyPair (type_l, type_r), gamma, constr_l @ constr_r)
   | EMatch (target, branches) ->
-    let* type_target, beta, constr_target = infer_expr tyenv alpha target in
+    let sigma = TyVar (Tyvar.fresh ()) in
+    let* type_target, beta, constr_target = infer_expr tyenv sigma target in
     let type_ret = TyVar (Tyvar.fresh ()) in
-    let answer_type_whole = TyVar (Tyvar.fresh ()) in
     let* constr =
       branches
       |> Result.map_m (fun branch ->
-        let* type_pattern, answer_type, type_expr, constr_branch =
-          infer_branch tyenv beta branch
+        let* type_pattern, sigma', type_expr, constr_branch =
+          infer_branch tyenv alpha branch
         in
         Ok
           ((type_target, type_pattern)
            :: (type_ret, type_expr)
-           :: (answer_type, answer_type_whole)
+           :: (sigma, sigma')
            :: constr_branch))
       |> Result.map List.concat
     in
-    Ok (type_ret, answer_type_whole, constr)
+    Ok (type_ret, beta, constr)
     (*
          Γ, arg : σ; β ⊢ expr : τ; γ
       --------------------------------- (fun)
