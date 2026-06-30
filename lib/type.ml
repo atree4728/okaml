@@ -13,6 +13,7 @@ type schema = Schema of tyvar list * t
 let schema_of ty = Schema ([], ty)
 let tyvar_of n = Idx n
 let string_of_tyvar (Idx i) = Printf.sprintf "'a%d" i
+let answer_all = false (* corresponds to #answer "all" / "none" in OchaCaml *)
 
 let string_of_type' pretty ty =
   let seen = ref [] in
@@ -68,11 +69,17 @@ let string_of_type' pretty ty =
       let s2 = aux 0 t2 in
       Printf.sprintf "%s -> %s" s1 s2 |> wrap (ctx > 0)
     | TyFun (t1, a, t2, b) ->
-      let s1 = aux 2 t1 in
-      let a = aux 2 a in
-      let s2 = aux 2 t2 in
-      let b = aux 2 b in
-      Printf.sprintf "%s / %s -> %s / %s" s1 a s2 b |> wrap (ctx > 0)
+      if answer_all
+      then (
+        let s1 = aux 2 t1 in
+        let a = aux 2 a in
+        let s2 = aux 2 t2 in
+        let b = aux 2 b in
+        Printf.sprintf "%s / %s -> %s / %s" s1 a s2 b |> wrap (ctx > 0))
+      else (
+        let s1 = aux 1 t1 in
+        let s2 = aux 0 t2 in
+        Printf.sprintf "%s => %s" s1 s2 |> wrap (ctx > 0))
   in
   aux 0 ty
 ;;
